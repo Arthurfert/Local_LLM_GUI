@@ -39,3 +39,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# PyInstaller
+*.spec
+dist/
+build/

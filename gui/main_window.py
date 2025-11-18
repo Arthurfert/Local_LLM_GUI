@@ -5,8 +5,9 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QTextEdit, QLineEdit, QPushButton, QComboBox, 
                                QLabel, QSplitter, QMessageBox)
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 from core.ollama_client import OllamaClient, OllamaWorker
+import os
 
 
 class MainWindow(QMainWindow):
@@ -21,8 +22,13 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         """Initialise l'interface utilisateur"""
-        self.setWindowTitle("Local LLM GUI - Ollama")
+        self.setWindowTitle("Local Chatbot")
         self.setGeometry(100, 100, 1000, 700)
+        
+        # Définir l'icône de la fenêtre
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         # Appliquer le style moderne
         self.apply_modern_style()
