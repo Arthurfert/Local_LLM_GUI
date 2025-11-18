@@ -35,10 +35,11 @@ class OllamaClient:
         Returns:
             str: réponse générée
         """
+        hyper_rules = "You should use Markdown formatting for your responses."
         try:
             payload = {
                 "model": model,
-                "prompt": prompt,
+                "prompt": prompt + "\n\n" + hyper_rules,
                 "stream": False
             }
             

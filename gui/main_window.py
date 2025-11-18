@@ -57,6 +57,7 @@ class MainWindow(QMainWindow):
         self.chat_display.setObjectName("chatDisplay")
         self.chat_display.setReadOnly(True)
         self.chat_display.setFont(QFont("Segoe UI", 10))
+        self.chat_display.setMarkdown("")  # Activer le support Markdown
         splitter.addWidget(self.chat_display)
         
         # Zone de saisie
@@ -219,7 +220,7 @@ class MainWindow(QMainWindow):
             scrollbar.setValue(scrollbar.maximum())
     
     def reformat_chat(self):
-        """Reformate tout le chat avec le style HTML"""
+        """Reformate tout le chat avec le style HTML et support Markdown"""
         plain_text = self.chat_display.toPlainText()
         
         # Diviser par les messages
@@ -235,35 +236,86 @@ class MainWindow(QMainWindow):
                 # Récupérer les lignes suivantes jusqu'au prochain label
                 i += 1
                 while i < len(lines) and not lines[i].strip().startswith(("Vous:", "Assistant:", "Erreur:")):
-                    if lines[i].strip():
-                        content += "<br>" + lines[i].strip()
+                    content += "\n" + lines[i]
                     i += 1
-                html_output += f'<p style="margin:10px 0;"><b style="color:#2196F3;">Vous:</b><br><span style="margin-left:20px;">{content}</span></p>'
+                # Convertir markdown en HTML pour le message utilisateur
+                html_content = self.markdown_to_html(content)
+                html_output += f'<p style="margin:10px 0;"><b style="color:#2196F3;">Vous:</b><br><div style="margin-left:20px;">{html_content}</div></p>'
                 continue
                 
             elif line.startswith("Assistant:"):
                 content = line[10:].strip()
                 i += 1
                 while i < len(lines) and not lines[i].strip().startswith(("Vous:", "Assistant:", "Erreur:")):
-                    if lines[i].strip():
-                        content += "<br>" + lines[i].strip()
+                    content += "\n" + lines[i]
                     i += 1
-                html_output += f'<p style="margin:10px 0;"><b style="color:#4CAF50;">Assistant:</b><br><span style="margin-left:20px;">{content}</span></p>'
+                # Convertir markdown en HTML pour la réponse de l'assistant
+                html_content = self.markdown_to_html(content)
+                html_output += f'<p style="margin:10px 0;"><b style="color:#4CAF50;">Assistant:</b><br><div style="margin-left:20px;">{html_content}</div></p>'
                 continue
                 
             elif line.startswith("Erreur:"):
                 content = line[7:].strip()
                 i += 1
                 while i < len(lines) and not lines[i].strip().startswith(("Vous:", "Assistant:", "Erreur:")):
-                    if lines[i].strip():
-                        content += "<br>" + lines[i].strip()
+                    content += "\n" + lines[i]
                     i += 1
-                html_output += f'<p style="margin:10px 0;"><b style="color:#F44336;">Erreur:</b><br><span style="margin-left:20px;">{content}</span></p>'
+                html_content = self.markdown_to_html(content)
+                html_output += f'<p style="margin:10px 0;"><b style="color:#F44336;">Erreur:</b><br><div style="margin-left:20px;">{html_content}</div></p>'
                 continue
             
             i += 1
         
         self.chat_display.setHtml(html_output)
+    
+    def markdown_to_html(self, text):
+        """Convertit le markdown en HTML avec support des blocs de code"""
+        import re
+        
+        # Échapper les caractères HTML de base d'abord
+        html = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        
+        # Bloc de code avec ``` (multilignes)
+        def replace_code_block(match):
+            lang = match.group(1) if match.group(1) else ''
+            code = match.group(2)
+            return f'<pre style="background-color:#1e1e1e; color:#d4d4d4; padding:10px; border-radius:5px; overflow-x:auto;"><code>{code}</code></pre>'
+        
+        html = re.sub(r'```(\w+)?\n(.*?)```', replace_code_block, html, flags=re.DOTALL)
+        
+        # Code inline avec `
+        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#1e1e1e; color:#d4d4d4; padding:2px 5px; border-radius:3px;">\1</code>', html)
+        
+        # Gras **texte** ou __texte__
+        html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+        html = re.sub(r'__(.+?)__', r'<strong>\1</strong>', html)
+        
+        # Italique *texte* ou _texte_
+        html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+        html = re.sub(r'_(.+?)_', r'<em>\1</em>', html)
+        
+        # Liens [texte](url)
+        html = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2" style="color:#2196F3;">\1</a>', html)
+        
+        # Titres
+        html = re.sub(r'^### (.+)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
+        html = re.sub(r'^## (.+)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
+        html = re.sub(r'^# (.+)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+        
+        # Listes non ordonnées
+        html = re.sub(r'^\- (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
+        html = re.sub(r'^\* (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
+        
+        # Listes ordonnées
+        html = re.sub(r'^\d+\. (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
+        
+        # Entourer les listes de <ul> ou <ol>
+        html = re.sub(r'(<li>.*?</li>(?:\n<li>.*?</li>)*)', r'<ul>\1</ul>', html, flags=re.DOTALL)
+        
+        # Retours à la ligne
+        html = html.replace('\n', '<br>')
+        
+        return html
     
     def clear_conversation(self):
         """Efface la conversation"""
@@ -347,6 +399,24 @@ class MainWindow(QMainWindow):
                 padding: 12px;
                 background-color: #02010A;
                 font-size: 14px;
+                color: #E0E0E0;
+            }
+            
+            QTextEdit#chatDisplay code {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                padding: 2px 5px;
+                border-radius: 3px;
+                font-family: 'Consolas', 'Courier New', monospace;
+            }
+            
+            QTextEdit#chatDisplay pre {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                padding: 10px;
+                border-radius: 5px;
+                overflow-x: auto;
+                font-family: 'Consolas', 'Courier New', monospace;
             }
             
             QLabel {
