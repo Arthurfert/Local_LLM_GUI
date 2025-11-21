@@ -173,13 +173,13 @@ class MainWindow(QMainWindow):
         
         # Couleurs et alignement
         align = "right" if is_user else "left"
-        bg_color = "#2B5278" if is_user else "#383838" # Bleu pour user, Gris pour assistant
+        bg_color = "#2B5278" if is_user else "#2D2D2D" # Bleu pour user, Gris pour assistant
         text_color = "#FFFFFF"
         
         # Structure HTML pour la bulle
         html = f"""
         <div align="{align}">
-            <table style="background-color: {bg_color}; color: {text_color}; border-radius: 10px; margin: 5px;">
+            <table style="background-color: {bg_color}; color: {text_color}; border-radius: 50px; margin: 5px;">
                 <tr>
                     <td style="padding: 10px;">
                         {content}
@@ -257,7 +257,7 @@ class MainWindow(QMainWindow):
         text_safe = re.sub(r'```(?:\w+)?\n?(.*?)```', save_code_block, text_safe, flags=re.DOTALL)
         
         # Code inline avec `
-        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#E6DB74; padding:2px 5px; border-radius:3px;">\1</code>', text_safe)
+        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#f3f6f4; padding:2px 5px; border-radius:20px;">\1</code>', text_safe)
         
         # Gras **texte**
         html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html)
@@ -334,7 +334,7 @@ class MainWindow(QMainWindow):
                 color: white;
                 border: none;
                 border-radius: 8px;
-                padding: 10px 20px;
+                padding: 10px;
                 font-weight: bold;
             }
             
