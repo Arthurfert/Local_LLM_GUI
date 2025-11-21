@@ -163,166 +163,114 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Erreur", error_message)
     
     def append_message(self, sender, message, color):
-        """Ajoute un message à la zone de chat"""
-        self.chat_display.append(
-            f'<p style="margin:10px 0;"><b style="color:{color};">{sender}:</b><br>'
-            f'<span style="margin-left:20px;">{message.replace(chr(10), "<br>")}</span></p>'
-        )
-        # Faire défiler vers le bas
+        """Ajoute un message complet à la zone de chat avec style de bulle"""
+        html_content = self.markdown_to_html(message)
+        self._insert_bubble(sender, html_content)
+        
+    def _insert_bubble(self, sender, content):
+        """Méthode interne pour insérer le HTML de la bulle"""
+        is_user = sender == "Vous"
+        
+        # Couleurs et alignement
+        align = "right" if is_user else "left"
+        bg_color = "#2B5278" if is_user else "#383838" # Bleu pour user, Gris pour assistant
+        text_color = "#FFFFFF"
+        
+        # Structure HTML pour la bulle
+        html = f"""
+        <div align="{align}">
+            <table style="background-color: {bg_color}; color: {text_color}; border-radius: 10px; margin: 5px;">
+                <tr>
+                    <td style="padding: 10px;">
+                        {content}
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <br>
+        """
+        
+        cursor = self.chat_display.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.insertHtml(html)
+        
+        # Scroll vers le bas
         scrollbar = self.chat_display.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
-    
+
     def append_streaming_message(self, sender, message, color):
-        """Ajoute un message initial pour le streaming"""
-        self.chat_display.append(
-            f'<p style="margin:10px 0;"><b style="color:{color};">{sender}:</b><br>'
-            f'<span style="margin-left:20px;"></span></p>'
-        )
-        
-        # Sauvegarder la position actuelle pour les mises à jour
-        self.streaming_cursor_position = len(self.chat_display.toPlainText())
-        
-        scrollbar = self.chat_display.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
-    
+        """Initialise le streaming"""
+        # On marque la position actuelle
+        self.last_msg_start_pos = self.chat_display.document().characterCount()
+        # On insère un vide pour commencer
+        self.update_streaming_message("...")
+
     def update_streaming_message(self, message):
         """Met à jour le dernier message en streaming"""
-        # Nouvelle approche : utiliser directement le curseur pour modifier le texte
+        html_content = self.markdown_to_html(message)
+        
+        # Construire le HTML de la bulle (Assistant)
+        html = f"""
+        <div align="left">
+            <table style="background-color: #383838; color: #FFFFFF; border-radius: 10px; margin: 5px;">
+                <tr>
+                    <td style="padding: 10px;">
+                        {html_content}
+                    </td>
+                </tr>
+            </table>
+        </div>
+        <br>
+        """
+        
+        if not hasattr(self, 'last_msg_start_pos'):
+            self.last_msg_start_pos = self.chat_display.document().characterCount()
+            
         cursor = self.chat_display.textCursor()
+        cursor.setPosition(self.last_msg_start_pos - 1)
+        cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
+        cursor.insertHtml(html)
         
-        # Se positionner à la fin
-        cursor.movePosition(cursor.MoveOperation.End)
-        
-        # Revenir en arrière pour trouver le dernier "Assistant:"
-        # et insérer le texte après
-        text = self.chat_display.toPlainText()
-        last_assistant_pos = text.rfind("Assistant:")
-        
-        if last_assistant_pos != -1:
-            # Calculer combien de caractères après "Assistant:\n"
-            content_start = last_assistant_pos + len("Assistant:") + 1
-            
-            # Sauvegarder le texte avant et après
-            before_text = text[:content_start]
-            
-            # Trouver le prochain "Vous:" ou la fin
-            next_user_pos = text.find("Vous:", content_start)
-            if next_user_pos == -1:
-                next_user_pos = len(text)
-            
-            after_text = text[next_user_pos:]
-            
-            # Reconstruire le texte complet
-            new_text = before_text + message + "\n\n" + after_text if after_text else before_text + message
-            
-            # Mettre à jour tout le contenu (pas optimal mais simple)
-            self.chat_display.setPlainText(new_text)
-            
-            # Réappliquer le formatage avec du HTML
-            self.reformat_chat()
-            
-            # Faire défiler vers le bas
-            scrollbar = self.chat_display.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
-    
-    def reformat_chat(self):
-        """Reformate tout le chat avec le style HTML et support Markdown"""
-        plain_text = self.chat_display.toPlainText()
-        
-        # Diviser par les messages
-        lines = plain_text.split('\n')
-        html_output = ""
-        
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            
-            if line.startswith("Vous:"):
-                content = line[5:].strip()
-                # Récupérer les lignes suivantes jusqu'au prochain label
-                i += 1
-                while i < len(lines) and not lines[i].strip().startswith(("Vous:", "Assistant:", "Erreur:")):
-                    content += "\n" + lines[i]
-                    i += 1
-                # Convertir markdown en HTML pour le message utilisateur
-                html_content = self.markdown_to_html(content)
-                html_output += f'<p style="margin:10px 0;"><b style="color:#2196F3;">Vous:</b><br><div style="margin-left:20px;">{html_content}</div></p>'
-                continue
-                
-            elif line.startswith("Assistant:"):
-                content = line[10:].strip()
-                i += 1
-                while i < len(lines) and not lines[i].strip().startswith(("Vous:", "Assistant:", "Erreur:")):
-                    content += "\n" + lines[i]
-                    i += 1
-                # Convertir markdown en HTML pour la réponse de l'assistant
-                html_content = self.markdown_to_html(content)
-                html_output += f'<p style="margin:10px 0;"><b style="color:#4CAF50;">Assistant:</b><br><div style="margin-left:20px;">{html_content}</div></p>'
-                continue
-                
-            elif line.startswith("Erreur:"):
-                content = line[7:].strip()
-                i += 1
-                while i < len(lines) and not lines[i].strip().startswith(("Vous:", "Assistant:", "Erreur:")):
-                    content += "\n" + lines[i]
-                    i += 1
-                html_content = self.markdown_to_html(content)
-                html_output += f'<p style="margin:10px 0;"><b style="color:#F44336;">Erreur:</b><br><div style="margin-left:20px;">{html_content}</div></p>'
-                continue
-            
-            i += 1
-        
-        self.chat_display.setHtml(html_output)
-    
+        scrollbar = self.chat_display.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
     def markdown_to_html(self, text):
         """Convertit le markdown en HTML avec support des blocs de code"""
         import re
+        import html as html_lib
         
         # Échapper les caractères HTML de base d'abord
-        html = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        text_safe = html_lib.escape(text)
         
         # Bloc de code avec ``` (multilignes)
         def replace_code_block(match):
-            lang = match.group(1) if match.group(1) else ''
-            code = match.group(2)
-            return f'<pre style="background-color:#1e1e1e; color:#d4d4d4; padding:10px; border-radius:5px; overflow-x:auto;"><code>{code}</code></pre>'
+            code = match.group(1)
+            return f'<pre style="background-color:#121212; color:#d4d4d4; padding:10px; border-radius:5px;"><code>{code}</code></pre>'
         
-        html = re.sub(r'```(\w+)?\n(.*?)```', replace_code_block, html, flags=re.DOTALL)
+        html = re.sub(r'```(?:\w+)?\n?(.*?)```', replace_code_block, text_safe, flags=re.DOTALL)
         
         # Code inline avec `
-        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#1e1e1e; color:#d4d4d4; padding:2px 5px; border-radius:3px;">\1</code>', html)
+        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#E6DB74; padding:2px 5px; border-radius:3px;">\1</code>', html)
         
-        # Gras **texte** ou __texte__
-        html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
-        html = re.sub(r'__(.+?)__', r'<strong>\1</strong>', html)
+        # Gras **texte**
+        html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html)
         
-        # Italique *texte* ou _texte_
-        html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
-        html = re.sub(r'_(.+?)_', r'<em>\1</em>', html)
-        
-        # Liens [texte](url)
-        html = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2" style="color:#2196F3;">\1</a>', html)
+        # Italique *texte*
+        html = re.sub(r'\*(.+?)\*', r'<i>\1</i>', html)
         
         # Titres
-        html = re.sub(r'^### (.+)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
-        html = re.sub(r'^## (.+)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
-        html = re.sub(r'^# (.+)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+        html = re.sub(r'^### (.+)$', r'<h3 style="color:#4CAF50; margin-top:10px;">\1</h3>', html, flags=re.MULTILINE)
+        html = re.sub(r'^## (.+)$', r'<h2 style="color:#4CAF50; margin-top:15px;">\1</h2>', html, flags=re.MULTILINE)
+        html = re.sub(r'^# (.+)$', r'<h1 style="color:#4CAF50; margin-top:20px;">\1</h1>', html, flags=re.MULTILINE)
         
-        # Listes non ordonnées
+        # Listes
         html = re.sub(r'^\- (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
-        html = re.sub(r'^\* (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
-        
-        # Listes ordonnées
-        html = re.sub(r'^\d+\. (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
-        
-        # Entourer les listes de <ul> ou <ol>
-        html = re.sub(r'(<li>.*?</li>(?:\n<li>.*?</li>)*)', r'<ul>\1</ul>', html, flags=re.DOTALL)
         
         # Retours à la ligne
         html = html.replace('\n', '<br>')
         
         return html
-    
+
     def clear_conversation(self):
         """Efface la conversation"""
         self.chat_display.clear()
@@ -332,102 +280,77 @@ class MainWindow(QMainWindow):
         """Applique un style moderne à l'interface"""
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #02010A;
+                background-color: #1E1E1E;
             }
             
-            QPushButton {
-                background-color: #04052E;
-                color: white;
+            QWidget {
+                color: #FFFFFF;
+                font-family: 'Segoe UI', sans-serif;
+            }
+
+            /* Zone de chat principale */
+            QTextEdit#chatDisplay {
+                background-color: #1E1E1E;
                 border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
-                font-size: 11px;
-                font-weight: bold;
+                padding: 10px;
             }
             
-            QPushButton:hover {
-                background-color: #22007C;
-            }
-            
-            QPushButton:pressed {
-                background-color: #04052E;
-            }
-            
-            QPushButton:disabled {
-                background-color: #BDBDBD;
-                color: #757575;
-            }
-            
-            QPushButton#refreshButton {
-                background-color: #04052E;
-                border-radius: 6px;
-                padding: 8px 16px;
-            }
-            
-            QPushButton#refreshButton:hover {
-                background-color: #22007C;
-            }
-            
-            QPushButton#refreshButton:pressed {
-                background-color: #04052E;
-            }
-            
-            QComboBox {
-                border: 1px solid #140152;
-                border-radius: 8px;
-                padding: 8px 12px;
-                background-color: #04052E;
-                font-size: 15px;
-            }
-            
-            QComboBox:hover {
-                border: 2px solid #2196F3;
-            }
-            
-            QComboBox::drop-down {
-                border: none;
-                padding-right: 10px;
-            }
-            
+            /* Zone de saisie */
             QTextEdit {
-                border: 2px solid #0D00A4;
-                border-radius: 35px;
-                padding: 12px;
-                background-color: #04052E;
+                background-color: #2D2D2D;
+                border: 1px solid #3E3E3E;
+                border-radius: 15px;
+                padding: 10px;
+                color: white;
                 font-size: 14px;
             }
             
             QTextEdit:focus {
-                border: 2px solid #0D00A4;
+                border: 1px solid #4CAF50;
             }
             
-            QTextEdit#chatDisplay {
-                padding: 12px;
-                background-color: #02010A;
-                font-size: 14px;
-                color: #E0E0E0;
-            }
-            
-            QTextEdit#chatDisplay code {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                padding: 2px 5px;
-                border-radius: 3px;
-                font-family: 'Consolas', 'Courier New', monospace;
-            }
-            
-            QTextEdit#chatDisplay pre {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                padding: 10px;
-                border-radius: 5px;
-                overflow-x: auto;
-                font-family: 'Consolas', 'Courier New', monospace;
-            }
-            
-            QLabel {
-                color: #424242;
-                font-size: 11px;
+            /* Boutons */
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 20px;
                 font-weight: bold;
+            }
+            
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            
+            QPushButton:disabled {
+                background-color: #2D2D2D;
+                color: #757575;
+            }
+            
+            /* ComboBox (Liste des modèles) */
+            QComboBox {
+                background-color: #2D2D2D;
+                border: 1px solid #3E3E3E;
+                border-radius: 8px;
+                padding: 5px 10px;
+                color: white;
+            }
+            
+            QComboBox::drop-down {
+                border: none;
+            }
+            
+            /* Scrollbar */
+            QScrollBar:vertical {
+                border: none;
+                background: #1E1E1E;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #424242;
+                min-height: 20px;
+                border-radius: 5px;
             }
         """)
