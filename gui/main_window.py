@@ -242,15 +242,22 @@ class MainWindow(QMainWindow):
         # Échapper les caractères HTML de base d'abord
         text_safe = html_lib.escape(text)
         
-        # Bloc de code avec ``` (multilignes)
-        def replace_code_block(match):
-            code = match.group(1)
-            return f'<pre style="background-color:#121212; color:#d4d4d4; padding:10px; border-radius:5px;"><code>{code}</code></pre>'
+        # Dictionnaire pour stocker les blocs de code temporairement
+        code_blocks = {}
         
-        html = re.sub(r'```(?:\w+)?\n?(.*?)```', replace_code_block, text_safe, flags=re.DOTALL)
+        def save_code_block(match):
+            key = f"__CODE_BLOCK_{len(code_blocks)}__"
+            code = match.group(1)
+            # On préserve les retours à la ligne dans le bloc de code
+            html_block = f'<pre style="background-color:#121212; color:#d4d4d4; padding:10px; border-radius:5px;"><code>{code}</code></pre>'
+            code_blocks[key] = html_block
+            return key
+            
+        # Extraire et protéger les blocs de code ```...```
+        text_safe = re.sub(r'```(?:\w+)?\n?(.*?)```', save_code_block, text_safe, flags=re.DOTALL)
         
         # Code inline avec `
-        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#E6DB74; padding:2px 5px; border-radius:3px;">\1</code>', html)
+        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#E6DB74; padding:2px 5px; border-radius:3px;">\1</code>', text_safe)
         
         # Gras **texte**
         html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html)
@@ -258,16 +265,28 @@ class MainWindow(QMainWindow):
         # Italique *texte*
         html = re.sub(r'\*(.+?)\*', r'<i>\1</i>', html)
         
+        # Ligne horizontale ---
+        html = re.sub(r'^\s*---\s*$', r'<hr style="border: 0; border-top: 1px solid #555; margin: 10px 0;">', html, flags=re.MULTILINE)
+        
         # Titres
-        html = re.sub(r'^### (.+)$', r'<h3 style="color:#4CAF50; margin-top:10px;">\1</h3>', html, flags=re.MULTILINE)
-        html = re.sub(r'^## (.+)$', r'<h2 style="color:#4CAF50; margin-top:15px;">\1</h2>', html, flags=re.MULTILINE)
-        html = re.sub(r'^# (.+)$', r'<h1 style="color:#4CAF50; margin-top:20px;">\1</h1>', html, flags=re.MULTILINE)
+        html = re.sub(r'^#### (.+)$', r'<h4 style="color:#4CAF50; margin-top:5px; margin-bottom:5px;">\1</h4>', html, flags=re.MULTILINE)
+        html = re.sub(r'^### (.+)$', r'<h3 style="color:#4CAF50; margin-top:10px; margin-bottom:5px;">\1</h3>', html, flags=re.MULTILINE)
+        html = re.sub(r'^## (.+)$', r'<h2 style="color:#4CAF50; margin-top:15px; margin-bottom:10px;">\1</h2>', html, flags=re.MULTILINE)
+        html = re.sub(r'^# (.+)$', r'<h1 style="color:#4CAF50; margin-top:20px; margin-bottom:10px;">\1</h1>', html, flags=re.MULTILINE)
         
         # Listes
         html = re.sub(r'^\- (.+)$', r'<li>\1</li>', html, flags=re.MULTILINE)
         
-        # Retours à la ligne
+        # Retours à la ligne (remplacer \n par <br>)
         html = html.replace('\n', '<br>')
+        
+        # Nettoyage : supprimer les <br> superflus après les balises de bloc
+        # Cela évite les doubles sauts de ligne après les titres, les listes, etc.
+        html = re.sub(r'(</h[1-6]>|</li>|<hr[^>]*>)\s*<br>', r'\1', html)
+        
+        # Restaurer les blocs de code
+        for key, block in code_blocks.items():
+            html = html.replace(key, block)
         
         return html
 
