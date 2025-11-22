@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
         input_layout.addLayout(input_row_layout)
         
         splitter.addWidget(input_widget)
-        splitter.setSizes([500, 200])
+        splitter.setSizes([600, 100])
         
         main_layout.addWidget(splitter)
         
