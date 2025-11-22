@@ -3,11 +3,58 @@ Fenêtre principale de l'application Local LLM GUI
 """
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QTextEdit, QLineEdit, QPushButton, QComboBox, 
-                               QLabel, QSplitter, QMessageBox)
-from PySide6.QtCore import Qt, QThread, Signal
+                               QLabel, QSplitter, QMessageBox, QListWidget, 
+                               QListWidgetItem, QSizePolicy)
+from PySide6.QtCore import Qt, QThread, Signal, QSize
 from PySide6.QtGui import QFont, QIcon
 from core.ollama_client import OllamaClient, OllamaWorker
 import os
+
+
+class ChatBubble(QWidget):
+    """Widget personnalisé pour afficher une bulle de chat"""
+    def __init__(self, text, sender, parent=None):
+        super().__init__(parent)
+        self.layout = QHBoxLayout()
+        self.layout.setContentsMargins(10, 5, 10, 5)
+        self.setLayout(self.layout)
+        
+        self.message_label = QLabel()
+        self.message_label.setWordWrap(True)
+        self.message_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.message_label.setText(text)
+        self.message_label.setFont(QFont("Segoe UI", 10))
+        self.message_label.setOpenExternalLinks(True)
+        
+        is_user = sender == "Vous"
+        
+        # Style
+        bg_color = "#2B5278" if is_user else "#383838"
+        text_color = "#FFFFFF"
+        border_radius = "15px"
+        
+        # On applique le style directement au label
+        self.message_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {bg_color};
+                color: {text_color};
+                border-radius: {border_radius};
+                padding: 12px;
+            }}
+        """)
+        
+        # Gestion de la largeur max (environ 80% de la fenêtre)
+        self.message_label.setMaximumWidth(800) 
+        
+        if is_user:
+            self.layout.addStretch()
+            self.layout.addWidget(self.message_label)
+        else:
+            self.layout.addWidget(self.message_label)
+            self.layout.addStretch()
+
+    def update_text(self, text):
+        self.message_label.setText(text)
 
 
 class MainWindow(QMainWindow):
@@ -55,24 +102,23 @@ class MainWindow(QMainWindow):
         
         main_layout.addLayout(model_layout)
         
-        # Zone de chat
-        splitter = QSplitter(Qt.Vertical)
-        
         # Zone d'affichage de la conversation
-        self.chat_display = QTextEdit()
+        self.chat_display = QListWidget()
         self.chat_display.setObjectName("chatDisplay")
-        self.chat_display.setReadOnly(True)
-        self.chat_display.setFont(QFont("Segoe UI", 10))
-        self.chat_display.setMarkdown("")  # Activer le support Markdown
-        splitter.addWidget(self.chat_display)
+        self.chat_display.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.chat_display.setSelectionMode(QListWidget.NoSelection)
+        main_layout.addWidget(self.chat_display, 1)
         
         # Zone de saisie
         input_widget = QWidget()
+        input_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         input_layout = QVBoxLayout()
+        input_layout.setContentsMargins(0, 0, 0, 0)
         input_widget.setLayout(input_layout)
         
         # Layout horizontal pour l'input et le bouton envoyer
         input_row_layout = QHBoxLayout()
+        input_row_layout.setContentsMargins(0, 0, 0, 0)
         
         self.input_field = QTextEdit()
         self.input_field.setMaximumHeight(50)
@@ -81,7 +127,7 @@ class MainWindow(QMainWindow):
         
         self.send_button = QPushButton("Envoyer")
         self.send_button.clicked.connect(self.send_message)
-        self.send_button.setMinimumHeight(50)
+        self.send_button.setMaximumHeight(50)
         self.send_button.setMinimumWidth(120)
         
         input_row_layout.addWidget(self.input_field)
@@ -89,10 +135,7 @@ class MainWindow(QMainWindow):
         
         input_layout.addLayout(input_row_layout)
         
-        splitter.addWidget(input_widget)
-        splitter.setSizes([600, 100])
-        
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(input_widget, 0)
         
     def load_models(self):
         """Charge la liste des modèles disponibles"""
@@ -168,71 +211,39 @@ class MainWindow(QMainWindow):
         self._insert_bubble(sender, html_content)
         
     def _insert_bubble(self, sender, content):
-        """Méthode interne pour insérer le HTML de la bulle"""
-        is_user = sender == "Vous"
+        """Méthode interne pour insérer le widget de la bulle"""
+        # Créer le widget personnalisé
+        bubble_widget = ChatBubble(content, sender)
         
-        # Couleurs et alignement
-        align = "right" if is_user else "left"
-        bg_color = "#2B5278" if is_user else "#2D2D2D" # Bleu pour user, Gris pour assistant
-        text_color = "#FFFFFF"
+        # Créer l'item de liste
+        item = QListWidgetItem(self.chat_display)
+        item.setSizeHint(bubble_widget.sizeHint())
         
-        # Structure HTML pour la bulle
-        html = f"""
-        <div align="{align}">
-            <table style="background-color: {bg_color}; color: {text_color}; border-radius: 50px; margin: 5px;">
-                <tr>
-                    <td style="padding: 10px;">
-                        {content}
-                    </td>
-                </tr>
-            </table>
-        </div>
-        <br>
-        """
-        
-        cursor = self.chat_display.textCursor()
-        cursor.movePosition(cursor.MoveOperation.End)
-        cursor.insertHtml(html)
+        # Ajouter l'item et définir le widget
+        self.chat_display.addItem(item)
+        self.chat_display.setItemWidget(item, bubble_widget)
         
         # Scroll vers le bas
-        scrollbar = self.chat_display.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        self.chat_display.scrollToBottom()
 
     def append_streaming_message(self, sender, message, color):
         """Initialise le streaming"""
-        # On marque la position actuelle
-        self.last_msg_start_pos = self.chat_display.document().characterCount()
-        # On insère un vide pour commencer
-        self.update_streaming_message("...")
+        self._insert_bubble(sender, "...")
 
     def update_streaming_message(self, message):
         """Met à jour le dernier message en streaming"""
         html_content = self.markdown_to_html(message)
         
-        # Construire le HTML de la bulle (Assistant)
-        html = f"""
-        <div align="left">
-            <table style="background-color: #383838; color: #FFFFFF; border-radius: 10px; margin: 5px;">
-                <tr>
-                    <td style="padding: 10px;">
-                        {html_content}
-                    </td>
-                </tr>
-            </table>
-        </div>
-        <br>
-        """
-        
-        if not hasattr(self, 'last_msg_start_pos'):
-            self.last_msg_start_pos = self.chat_display.document().characterCount()
-            
-        cursor = self.chat_display.textCursor()
-        cursor.setPosition(self.last_msg_start_pos - 1)
-        cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
-        cursor.insertHtml(html)
-        
-        scrollbar = self.chat_display.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        # Récupérer le dernier item
+        count = self.chat_display.count()
+        if count > 0:
+            item = self.chat_display.item(count - 1)
+            widget = self.chat_display.itemWidget(item)
+            if isinstance(widget, ChatBubble):
+                widget.update_text(html_content)
+                # Ajuster la taille de l'item si nécessaire
+                item.setSizeHint(widget.sizeHint())
+                self.chat_display.scrollToBottom()
 
     def markdown_to_html(self, text):
         """Convertit le markdown en HTML avec support des blocs de code"""
@@ -308,7 +319,7 @@ class MainWindow(QMainWindow):
             }
 
             /* Zone de chat principale */
-            QTextEdit#chatDisplay {
+            QListWidget#chatDisplay {
                 background-color: #1E1E1E;
                 border: none;
                 padding: 10px;
