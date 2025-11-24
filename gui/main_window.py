@@ -4,7 +4,7 @@ Fenêtre principale de l'application Local LLM GUI
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QTextEdit, QLineEdit, QPushButton, QComboBox, 
                                QLabel, QSplitter, QMessageBox, QListWidget, 
-                               QListWidgetItem, QSizePolicy)
+                               QListWidgetItem, QSizePolicy, QMenu, QApplication)
 from PySide6.QtCore import Qt, QThread, Signal, QSize
 from PySide6.QtGui import QFont, QIcon, QTextDocument
 from core.ollama_client import OllamaClient, OllamaWorker
@@ -47,6 +47,10 @@ class ChatBubble(QWidget):
         # Gestion de la largeur max (augmenté pour les grands écrans)
         self.message_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         
+        # Menu contextuel
+        self.message_label.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.message_label.customContextMenuRequested.connect(self.show_context_menu)
+        
         if is_user:
             self.layout.addStretch()
             self.layout.addWidget(self.message_label)
@@ -55,6 +59,84 @@ class ChatBubble(QWidget):
             self.layout.addStretch()
             
         self.resize_label()
+
+    def show_context_menu(self, pos):
+        menu = QMenu(self)
+        
+        # Styles pour le menu
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                color: #FFFFFF;
+                border: 1px solid #3E3E3E;
+                border-radius: 10px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                border-radius: 10px;
+            }
+            QMenu::item:selected {
+                background-color: #4CAF50;
+                border-radius: 10px;
+            }
+        """)
+        
+        # Action: Copier tout
+        copy_all_action = menu.addAction("Copier le message")
+        
+        # Action: Copier la sélection
+        copy_selection_action = None
+        if self.message_label.hasSelectedText():
+            copy_selection_action = menu.addAction("Copier la sélection")
+            
+        # Action: Copier le code
+        html_content = self.message_label.text()
+        code_blocks = self.extract_code_blocks(html_content)
+        
+        copy_code_actions = {}
+        if code_blocks:
+            menu.addSeparator()
+            if len(code_blocks) == 1:
+                action = menu.addAction("Copier le code")
+                copy_code_actions[action] = code_blocks[0]
+            else:
+                for i, code in enumerate(code_blocks):
+                    preview = code.strip().split('\n')[0][:30]
+                    if len(preview) < len(code.strip().split('\n')[0]):
+                        preview += "..."
+                    action = menu.addAction(f"Copier le code {i+1} ({preview})")
+                    copy_code_actions[action] = code
+
+        # Afficher le menu
+        action = menu.exec(self.message_label.mapToGlobal(pos))
+        
+        clipboard = QApplication.clipboard()
+        
+        if action == copy_all_action:
+            # Convertir HTML en texte brut
+            doc = QTextDocument()
+            doc.setHtml(html_content)
+            clipboard.setText(doc.toPlainText())
+            
+        elif copy_selection_action and action == copy_selection_action:
+            clipboard.setText(self.message_label.selectedText())
+            
+        elif action in copy_code_actions:
+            clipboard.setText(copy_code_actions[action])
+
+    def extract_code_blocks(self, html):
+        import re
+        import html as html_lib
+        
+        blocks = []
+        # Regex pour trouver les blocs de code dans le HTML généré
+        matches = re.finditer(r'<pre[^>]*><code>(.*?)</code></pre>', html, re.DOTALL)
+        
+        for match in matches:
+            code = html_lib.unescape(match.group(1))
+            blocks.append(code)
+            
+        return blocks
 
     def resize_label(self):
         """Ajuste la largeur max du label en fonction du contenu"""
