@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QSplitter, QMessageBox, QListWidget, 
                                QListWidgetItem, QSizePolicy)
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QFont, QIcon, QTextDocument
 from core.ollama_client import OllamaClient, OllamaWorker
 import os
 
@@ -16,7 +16,7 @@ class ChatBubble(QWidget):
     def __init__(self, text, sender, parent=None):
         super().__init__(parent)
         self.layout = QHBoxLayout()
-        self.layout.setContentsMargins(10, 5, 10, 5)
+        self.layout.setContentsMargins(5, 5, 5, 5)
         self.setLayout(self.layout)
         
         self.message_label = QLabel()
@@ -39,12 +39,13 @@ class ChatBubble(QWidget):
                 background-color: {bg_color};
                 color: {text_color};
                 border-radius: {border_radius};
-                padding: 12px;
+                border: 1px solid {bg_color};
+                padding: 6px 12px;
             }}
         """)
         
-        # Gestion de la largeur max (environ 80% de la fenêtre)
-        self.message_label.setMaximumWidth(800) 
+        # Gestion de la largeur max (augmenté pour les grands écrans)
+        self.message_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         
         if is_user:
             self.layout.addStretch()
@@ -52,9 +53,26 @@ class ChatBubble(QWidget):
         else:
             self.layout.addWidget(self.message_label)
             self.layout.addStretch()
+            
+        self.resize_label()
+
+    def resize_label(self):
+        """Ajuste la largeur max du label en fonction du contenu"""
+        doc = QTextDocument()
+        doc.setDefaultFont(self.message_label.font())
+        doc.setDocumentMargin(0)
+        doc.setHtml(self.message_label.text())
+        
+        # On calcule la largeur idéale avec une limite haute de 1800px
+        doc.setTextWidth(1800)
+        
+        # On ajoute une marge pour le padding (12px * 2) + marge de sécurité
+        new_width = int(doc.idealWidth()) + 40
+        self.message_label.setMaximumWidth(min(1800, new_width))
 
     def update_text(self, text):
         self.message_label.setText(text)
+        self.resize_label()
 
 
 class MainWindow(QMainWindow):
@@ -148,7 +166,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Attention", 
                               "Aucun modèle disponible.\n\n"
                               "Assurez-vous qu'Ollama est installé et en cours d'exécution,\n"
-                              "puis téléchargez un modèle avec : ollama pull llama2")
+                              "puis téléchargez un modèle avec : ollama pull (llama2)")
     
     def send_message(self):
         """Envoie un message au LLM"""
@@ -299,7 +317,8 @@ class MainWindow(QMainWindow):
         for key, block in code_blocks.items():
             html = html.replace(key, block)
         
-        return html
+        # Envelopper dans un span pour forcer l'interprétation HTML par Qt
+        return f"<span>{html}</span>"
 
     def clear_conversation(self):
         """Efface la conversation"""
