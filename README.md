@@ -71,6 +71,7 @@ python main.py
 - ✅ Gestion des erreurs
 - ✅ Support de plusieurs modèles Ollama
 - ✅ Rafraîchissement de la liste des modèles
+- ✅ Copier/collé des messages, d'une sélection ou d'un bloc de code
 
 ## 📁 Structure du projet
 
@@ -78,12 +79,15 @@ python main.py
 Local_LLM_GUI/
 ├── main.py                 # Point d'entrée de l'application
 ├── requirements.txt        # Dépendances Python
+├── build_exe.py            # Création d'exécutable avec PyInstaller
 ├── gui/
 │   ├── __init__.py
 │   └── main_window.py     # Fenêtre principale
-└── core/
-    ├── __init__.py
-    └── ollama_client.py   # Client API Ollama
+├── core/
+│   ├── __init__.py
+│   └── ollama_client.py   # Client API Ollama
+└── assets/
+    └── icon.ico           # Icône de l'application
 ```
 
 ## 🔧 Configuration
@@ -121,4 +125,4 @@ Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou un
 
 ## 👨‍💻 Auteur
 
-Arthur Fert
+[Arthur Fert](https://github.com/Arthurfert)
