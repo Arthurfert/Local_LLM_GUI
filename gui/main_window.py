@@ -4,11 +4,13 @@ Fenêtre principale de l'application Local LLM GUI
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QTextEdit, QLineEdit, QPushButton, QComboBox, 
                                QLabel, QSplitter, QMessageBox, QListWidget, 
-                               QListWidgetItem, QSizePolicy, QMenu, QApplication)
+                               QListWidgetItem, QSizePolicy, QMenu, QApplication,
+                               QFileDialog, QFrame, QScrollArea)
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-from PySide6.QtGui import QFont, QIcon, QTextDocument
+from PySide6.QtGui import QFont, QIcon, QTextDocument, QPixmap
 from core.ollama_client import OllamaClient, OllamaWorker
 import os
+import base64
 
 
 class ChatBubble(QWidget):
@@ -164,6 +166,7 @@ class MainWindow(QMainWindow):
         self.conversation_history = []
         self.current_response = ""  # Pour accumuler la réponse en streaming
         self.streaming_cursor_position = 0  # Position du curseur pour le streaming
+        self.attached_files = []  # Liste des fichiers attachés [{"path": ..., "type": ..., "data": ...}]
         self.init_ui()
         self.load_models()
         
@@ -214,11 +217,38 @@ class MainWindow(QMainWindow):
         input_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         input_layout = QVBoxLayout()
         input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(5)
         input_widget.setLayout(input_layout)
+        
+        # Zone d'aperçu des fichiers attachés
+        self.attachments_widget = QWidget()
+        self.attachments_widget.setVisible(False)
+        self.attachments_layout = QHBoxLayout()
+        self.attachments_layout.setContentsMargins(5, 5, 5, 5)
+        self.attachments_layout.setSpacing(10)
+        self.attachments_layout.setAlignment(Qt.AlignLeft)
+        self.attachments_widget.setLayout(self.attachments_layout)
+        self.attachments_widget.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border-radius: 8px;
+            }
+        """)
+        
+        input_layout.addWidget(self.attachments_widget)
         
         # Layout horizontal pour l'input et le bouton envoyer
         input_row_layout = QHBoxLayout()
         input_row_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Bouton d'attachement
+        self.attach_button = QPushButton("📎")
+        self.attach_button.setObjectName("attachButton")
+        self.attach_button.setToolTip("Joindre un fichier (image, PDF)")
+        self.attach_button.clicked.connect(self.attach_file)
+        self.attach_button.setMaximumHeight(50)
+        self.attach_button.setMaximumWidth(50)
+        self.attach_button.setMinimumWidth(50)
         
         self.input_field = QTextEdit()
         self.input_field.setMaximumHeight(50)
@@ -230,6 +260,7 @@ class MainWindow(QMainWindow):
         self.send_button.setMaximumHeight(50)
         self.send_button.setMinimumWidth(120)
         
+        input_row_layout.addWidget(self.attach_button)
         input_row_layout.addWidget(self.input_field)
         input_row_layout.addWidget(self.send_button)
         
@@ -253,7 +284,7 @@ class MainWindow(QMainWindow):
     def send_message(self):
         """Envoie un message au LLM"""
         user_message = self.input_field.toPlainText().strip()
-        if not user_message:
+        if not user_message and not self.attached_files:
             return
         
         selected_model = self.model_combo.currentText()
@@ -261,20 +292,40 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un modèle.")
             return
         
+        # Préparer le message avec les fichiers attachés
+        display_message = user_message
+        full_message = user_message
+        images_base64 = []
+        
+        # Traiter les fichiers attachés
+        for attachment in self.attached_files:
+            if attachment["type"] == "image":
+                images_base64.append(attachment["data"])
+                display_message = f"🖼️ {attachment['name']}\n\n{display_message}" if display_message else f"🖼️ {attachment['name']}"
+            elif attachment["type"] == "pdf":
+                pdf_text = attachment.get("text", "")
+                if pdf_text:
+                    full_message = f"[Contenu du PDF '{attachment['name']}']\n{pdf_text}\n\n{full_message}"
+                    display_message = f"📄 {attachment['name']}\n\n{display_message}" if display_message else f"📄 {attachment['name']}"
+        
         # Afficher le message de l'utilisateur
-        self.append_message("Vous", user_message, "#2196F3")
+        self.append_message("Vous", display_message, "#2196F3")
         
         # Préparer l'affichage de la réponse en streaming
         self.current_response = ""
-        self.current_user_message = user_message
+        self.current_user_message = full_message
         self.append_streaming_message("Assistant", "", "#4CAF50")
         
         self.input_field.clear()
+        self.clear_attachments()
         self.send_button.setEnabled(False)
         
         # Créer un worker thread pour ne pas bloquer l'UI
-        self.worker = OllamaWorker(self.ollama_client, selected_model, 
-                                   user_message, self.conversation_history, stream=True)
+        self.worker = OllamaWorker(
+            self.ollama_client, selected_model, 
+            full_message, self.conversation_history, 
+            stream=True, images=images_base64 if images_base64 else None
+        )
         self.worker.response_chunk.connect(self.handle_response_chunk)
         self.worker.response_ready.connect(self.handle_response)
         self.worker.error_occurred.connect(self.handle_error)
@@ -305,6 +356,167 @@ class MainWindow(QMainWindow):
         self.send_button.setEnabled(True)
         QMessageBox.critical(self, "Erreur", error_message)
     
+    def attach_file(self):
+        """Ouvre un dialogue pour sélectionner un fichier à attacher"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Sélectionner un fichier",
+            "",
+            "Images et PDF (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.pdf);;Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp);;PDF (*.pdf);;Tous les fichiers (*)"
+        )
+        
+        if file_path:
+            self.process_attachment(file_path)
+    
+    def process_attachment(self, file_path):
+        """Traite un fichier attaché"""
+        file_name = os.path.basename(file_path)
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        try:
+            if file_ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp']:
+                # Traiter l'image
+                with open(file_path, 'rb') as f:
+                    image_data = base64.b64encode(f.read()).decode('utf-8')
+                
+                self.attached_files.append({
+                    "name": file_name,
+                    "path": file_path,
+                    "type": "image",
+                    "data": image_data
+                })
+                self.add_attachment_preview(file_name, "image", file_path)
+                
+            elif file_ext == '.pdf':
+                # Extraire le texte du PDF
+                pdf_text = self.extract_pdf_text(file_path)
+                
+                if pdf_text:
+                    self.attached_files.append({
+                        "name": file_name,
+                        "path": file_path,
+                        "type": "pdf",
+                        "text": pdf_text
+                    })
+                    self.add_attachment_preview(file_name, "pdf")
+                else:
+                    QMessageBox.warning(self, "Erreur", 
+                        "Impossible d'extraire le texte du PDF.\n"
+                        "Assurez-vous que PyMuPDF (fitz) est installé:\n"
+                        "pip install PyMuPDF")
+            else:
+                QMessageBox.warning(self, "Format non supporté", 
+                    f"Le format {file_ext} n'est pas supporté.\n"
+                    "Formats acceptés: PNG, JPG, JPEG, GIF, BMP, WEBP, PDF")
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur lors du traitement du fichier:\n{str(e)}")
+    
+    def extract_pdf_text(self, file_path):
+        """Extrait le texte d'un fichier PDF"""
+        try:
+            import fitz  # PyMuPDF
+            
+            doc = fitz.open(file_path)
+            text = ""
+            
+            for page_num, page in enumerate(doc):
+                text += f"\n--- Page {page_num + 1} ---\n"
+                text += page.get_text()
+            
+            doc.close()
+            return text.strip()
+            
+        except ImportError:
+            return None
+        except Exception as e:
+            print(f"Erreur extraction PDF: {e}")
+            return None
+    
+    def add_attachment_preview(self, file_name, file_type, file_path=None):
+        """Ajoute un aperçu du fichier attaché dans la zone d'aperçu"""
+        # Container pour l'aperçu
+        preview_widget = QFrame()
+        preview_widget.setObjectName("attachmentPreview")
+        preview_layout = QHBoxLayout()
+        preview_layout.setContentsMargins(8, 5, 8, 5)
+        preview_layout.setSpacing(5)
+        preview_widget.setLayout(preview_layout)
+        
+        preview_widget.setStyleSheet("""
+            QFrame#attachmentPreview {
+                background-color: #3E3E3E;
+                border-radius: 5px;
+                border: 1px solid #4E4E4E;
+            }
+        """)
+        
+        # Icône ou miniature
+        icon_label = QLabel()
+        if file_type == "image" and file_path:
+            pixmap = QPixmap(file_path)
+            pixmap = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            icon_label.setPixmap(pixmap)
+        else:
+            icon_label.setText("📄" if file_type == "pdf" else "📎")
+            icon_label.setFont(QFont("Segoe UI Emoji", 16))
+        
+        preview_layout.addWidget(icon_label)
+        
+        # Nom du fichier
+        name_label = QLabel(file_name)
+        name_label.setFont(QFont("Segoe UI", 9))
+        name_label.setStyleSheet("color: #FFFFFF;")
+        name_label.setMaximumWidth(150)
+        preview_layout.addWidget(name_label)
+        
+        # Bouton supprimer
+        remove_button = QPushButton("x")
+        remove_button.setObjectName("removeAttachment")
+        remove_button.setFixedSize(22, 22)
+        remove_button.setFont(QFont("Segoe UI Symbol", 10))
+        remove_button.setStyleSheet("""
+            QPushButton#removeAttachment {
+                background-color: #555555;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 11px;
+            }
+            QPushButton#removeAttachment:hover {
+                background-color: #FF5555;
+                color: #FFFFFF;
+            }
+        """)
+        remove_button.clicked.connect(lambda: self.remove_attachment(preview_widget, file_name))
+        preview_layout.addWidget(remove_button)
+        
+        self.attachments_layout.addWidget(preview_widget)
+        self.attachments_widget.setVisible(True)
+    
+    def remove_attachment(self, preview_widget, file_name):
+        """Supprime un fichier attaché"""
+        # Supprimer de la liste
+        self.attached_files = [f for f in self.attached_files if f["name"] != file_name]
+        
+        # Supprimer le widget d'aperçu
+        preview_widget.deleteLater()
+        
+        # Masquer la zone si plus d'attachements
+        if not self.attached_files:
+            self.attachments_widget.setVisible(False)
+    
+    def clear_attachments(self):
+        """Supprime tous les fichiers attachés"""
+        self.attached_files.clear()
+        
+        # Supprimer tous les widgets d'aperçu
+        while self.attachments_layout.count():
+            item = self.attachments_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        self.attachments_widget.setVisible(False)
+
     def append_message(self, sender, message, color):
         """Ajoute un message complet à la zone de chat avec style de bulle"""
         html_content = self.markdown_to_html(message)
@@ -470,6 +682,20 @@ class MainWindow(QMainWindow):
             
             QComboBox::drop-down {
                 border: none;
+            }
+            
+            /* Bouton d'attachement */
+            QPushButton#attachButton {
+                background-color: #2D2D2D;
+                border: 1px solid #3E3E3E;
+                border-radius: 15px;
+                font-size: 18px;
+                padding: 0px;
+            }
+            
+            QPushButton#attachButton:hover {
+                background-color: #3E3E3E;
+                border: 1px solid #4CAF50;
             }
             
             /* Scrollbar */

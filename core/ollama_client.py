@@ -98,7 +98,7 @@ class OllamaClient:
         except Exception as e:
             return f"Erreur: {str(e)}"
     
-    def chat_stream(self, model, messages, chunk_callback=None):
+    def chat_stream(self, model, messages, chunk_callback=None, images=None):
         """
         Utilise l'API chat d'Ollama en mode streaming
         
@@ -106,12 +106,21 @@ class OllamaClient:
             model: nom du modèle
             messages: liste de messages au format [{role: "user/assistant", content: "..."}]
             chunk_callback: signal appelé pour chaque chunk (optionnel)
+            images: liste d'images encodées en base64 (optionnel)
         
         Returns:
             str: réponse complète générée
         """
         try:
             import json
+            
+            # Si des images sont fournies, les ajouter au dernier message utilisateur
+            if images and messages:
+                # Trouver le dernier message utilisateur et lui ajouter les images
+                for i in range(len(messages) - 1, -1, -1):
+                    if messages[i].get('role') == 'user':
+                        messages[i]['images'] = images
+                        break
             
             payload = {
                 "model": model,
@@ -158,13 +167,14 @@ class OllamaWorker(QThread):
     response_chunk = Signal(str)  # Nouveau signal pour les chunks en streaming
     error_occurred = Signal(str)
     
-    def __init__(self, client, model, prompt, conversation_history, stream=True):
+    def __init__(self, client, model, prompt, conversation_history, stream=True, images=None):
         super().__init__()
         self.client = client
         self.model = model
         self.prompt = prompt
         self.conversation_history = conversation_history
         self.stream = stream
+        self.images = images or []  # Liste d'images encodées en base64
     
     def run(self):
         """Exécute la requête dans un thread séparé"""
@@ -175,7 +185,10 @@ class OllamaWorker(QThread):
             
             if self.stream:
                 # Mode streaming
-                full_response = self.client.chat_stream(self.model, messages, self.response_chunk)
+                full_response = self.client.chat_stream(
+                    self.model, messages, self.response_chunk, 
+                    images=self.images if self.images else None
+                )
                 if full_response.startswith("Erreur:"):
                     self.error_occurred.emit(full_response)
                 else:
