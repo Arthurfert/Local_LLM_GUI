@@ -558,26 +558,54 @@ class MainWindow(QMainWindow):
                 self.chat_display.scrollToBottom()
 
     def markdown_to_html(self, text):
-        """Convertit le markdown en HTML avec support des blocs de code"""
+        """Convertit le markdown en HTML avec support des blocs de code et formules LaTeX"""
         import re
         import html as html_lib
         
         # Échapper les caractères HTML de base d'abord
         text_safe = html_lib.escape(text)
         
-        # Dictionnaire pour stocker les blocs de code temporairement
+        # Dictionnaire pour stocker les éléments protégés temporairement
         code_blocks = {}
+        math_blocks = {}
         
         def save_code_block(match):
             key = f"__CODE_BLOCK_{len(code_blocks)}__"
             code = match.group(1)
-            # On préserve les retours à la ligne dans le bloc de code
             html_block = f'<pre style="background-color:#121212; color:#d4d4d4; padding:10px; border-radius:5px;"><code>{code}</code></pre>'
             code_blocks[key] = html_block
+            return key
+        
+        def save_math_block(match):
+            key = f"__MATH_BLOCK_{len(math_blocks)}__"
+            formula = match.group(1)
+            # Décoder les entités HTML pour le rendu LaTeX
+            formula = html_lib.unescape(formula)
+            img_html = self.latex_to_html(formula, display_mode=True)
+            math_blocks[key] = img_html
+            return key
+        
+        def save_math_inline(match):
+            key = f"__MATH_INLINE_{len(math_blocks)}__"
+            formula = match.group(1)
+            formula = html_lib.unescape(formula)
+            img_html = self.latex_to_html(formula, display_mode=False)
+            math_blocks[key] = img_html
             return key
             
         # Extraire et protéger les blocs de code ```...```
         text_safe = re.sub(r'```(?:\w+)?\n?(.*?)```', save_code_block, text_safe, flags=re.DOTALL)
+        
+        # Extraire et protéger les formules mathématiques
+        # Blocs $$...$$ (display mode)
+        text_safe = re.sub(r'\$\$(.+?)\$\$', save_math_block, text_safe, flags=re.DOTALL)
+        # Inline $...$ (éviter les faux positifs avec les prix comme $10)
+        text_safe = re.sub(r'(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)', save_math_inline, text_safe)
+        
+        # Blocs \[...\] (display mode alternatif)
+        text_safe = re.sub(r'\\\[(.+?)\\\]', save_math_block, text_safe, flags=re.DOTALL)
+        # Inline \(...\) (alternatif)
+        text_safe = re.sub(r'\\\((.+?)\\\)', save_math_inline, text_safe)
         
         # Code inline avec `
         html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#f3f6f4; padding:2px 5px; border-radius:20px;">\1</code>', text_safe)
@@ -611,8 +639,66 @@ class MainWindow(QMainWindow):
         for key, block in code_blocks.items():
             html = html.replace(key, block)
         
+        # Restaurer les formules mathématiques
+        for key, block in math_blocks.items():
+            html = html.replace(key, block)
+        
         # Envelopper dans un span pour forcer l'interprétation HTML par Qt
         return f"<span>{html}</span>"
+    
+    def latex_to_html(self, formula, display_mode=False):
+        """Convertit une formule LaTeX en image HTML base64"""
+        try:
+            import matplotlib
+            matplotlib.use('Agg')  # Backend non-interactif
+            import matplotlib.pyplot as plt
+            from io import BytesIO
+            
+            # Créer une figure
+            fig = plt.figure(figsize=(0.1, 0.1))
+            fig.patch.set_facecolor('none')  # Fond transparent
+            
+            # Taille de police réduite pour s'intégrer au texte
+            fontsize = 11 if display_mode else 10
+            
+            # Ajouter le texte LaTeX
+            text = fig.text(0, 0, f"${formula}$", fontsize=fontsize, color='white',
+                          ha='left', va='bottom')
+            
+            # Ajuster la taille de la figure au contenu
+            fig.canvas.draw()
+            bbox = text.get_window_extent(fig.canvas.get_renderer())
+            
+            # Convertir en pouces avec marge
+            width = bbox.width / fig.dpi + 0.05
+            height = bbox.height / fig.dpi + 0.05
+            fig.set_size_inches(width, height)
+            
+            # Repositionner le texte
+            text.set_position((0.05, 0.15))
+            
+            # Sauvegarder en PNG dans un buffer - DPI réduit
+            buf = BytesIO()
+            fig.savefig(buf, format='png', dpi=120, transparent=True, 
+                       bbox_inches='tight', pad_inches=0.01)
+            plt.close(fig)
+            
+            # Encoder en base64
+            buf.seek(0)
+            img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+            
+            # Style CSS selon le mode - hauteur limitée pour inline
+            if display_mode:
+                style = "display: block; margin: 8px auto; max-height: 60px;"
+            else:
+                style = "vertical-align: middle; max-height: 18px;"
+            
+            return f'<img src="data:image/png;base64,{img_base64}" style="{style}" />'
+            
+        except Exception as e:
+            # En cas d'erreur, afficher la formule en texte
+            print(f"Erreur rendu LaTeX: {e}")
+            return f'<code style="color: #FFA500;">{formula}</code>'
 
     def clear_conversation(self):
         """Efface la conversation"""
