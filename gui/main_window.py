@@ -165,7 +165,6 @@ class MainWindow(QMainWindow):
         self.ollama_client = OllamaClient()
         self.conversation_history = []
         self.current_response = ""  # Pour accumuler la réponse en streaming
-        self.streaming_cursor_position = 0  # Position du curseur pour le streaming
         self.attached_files = []  # Liste des fichiers attachés [{"path": ..., "type": ..., "data": ...}]
         self.init_ui()
         self.load_models()
@@ -324,7 +323,7 @@ class MainWindow(QMainWindow):
         self.worker = OllamaWorker(
             self.ollama_client, selected_model, 
             full_message, self.conversation_history, 
-            stream=True, images=images_base64 if images_base64 else None
+            images=images_base64 if images_base64 else None
         )
         self.worker.response_chunk.connect(self.handle_response_chunk)
         self.worker.response_ready.connect(self.handle_response)

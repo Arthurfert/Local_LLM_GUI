@@ -23,81 +23,6 @@ class OllamaClient:
             print(f"Erreur lors de la récupération des modèles: {e}")
             return []
     
-    def generate(self, model, prompt, context=None):
-        """
-        Génère une réponse avec le modèle spécifié
-        
-        Args:
-            model: nom du modèle à utiliser
-            prompt: texte d'entrée
-            context: historique de conversation (optionnel)
-        
-        Returns:
-            str: réponse générée
-        """
-        hyper_rules = "You should use Markdown formatting for your responses."
-        try:
-            payload = {
-                "model": model,
-                "prompt": prompt + "\n\n" + hyper_rules,
-                "stream": False
-            }
-            
-            if context:
-                payload["context"] = context
-            
-            response = requests.post(
-                f"{self.base_url}/api/generate",
-                json=payload,
-                timeout=120
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('response', ''), data.get('context')
-            else:
-                return f"Erreur: {response.status_code}", None
-                
-        except requests.exceptions.Timeout:
-            return "Erreur: La requête a expiré. Le modèle met trop de temps à répondre.", None
-        except Exception as e:
-            return f"Erreur: {str(e)}", None
-    
-    def chat(self, model, messages):
-        """
-        Utilise l'API chat d'Ollama (mode non-streaming)
-        
-        Args:
-            model: nom du modèle
-            messages: liste de messages au format [{role: "user/assistant", content: "..."}]
-        
-        Returns:
-            str: réponse générée
-        """
-        try:
-            payload = {
-                "model": model,
-                "messages": messages,
-                "stream": False
-            }
-            
-            response = requests.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=120
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('message', {}).get('content', '')
-            else:
-                return f"Erreur: {response.status_code}"
-                
-        except requests.exceptions.Timeout:
-            return "Erreur: La requête a expiré. Le modèle met trop de temps à répondre."
-        except Exception as e:
-            return f"Erreur: {str(e)}"
-    
     def chat_stream(self, model, messages, chunk_callback=None, images=None):
         """
         Utilise l'API chat d'Ollama en mode streaming
@@ -167,13 +92,12 @@ class OllamaWorker(QThread):
     response_chunk = Signal(str)  # Nouveau signal pour les chunks en streaming
     error_occurred = Signal(str)
     
-    def __init__(self, client, model, prompt, conversation_history, stream=True, images=None):
+    def __init__(self, client, model, prompt, conversation_history, images=None):
         super().__init__()
         self.client = client
         self.model = model
         self.prompt = prompt
         self.conversation_history = conversation_history
-        self.stream = stream
         self.images = images or []  # Liste d'images encodées en base64
     
     def run(self):
@@ -183,23 +107,15 @@ class OllamaWorker(QThread):
             messages = self.conversation_history.copy()
             messages.append({"role": "user", "content": self.prompt})
             
-            if self.stream:
-                # Mode streaming
-                full_response = self.client.chat_stream(
-                    self.model, messages, self.response_chunk, 
-                    images=self.images if self.images else None
-                )
-                if full_response.startswith("Erreur:"):
-                    self.error_occurred.emit(full_response)
-                else:
-                    self.response_ready.emit(full_response)
+            # Mode streaming
+            full_response = self.client.chat_stream(
+                self.model, messages, self.response_chunk, 
+                images=self.images if self.images else None
+            )
+            if full_response.startswith("Erreur:"):
+                self.error_occurred.emit(full_response)
             else:
-                # Mode non-streaming (ancien comportement)
-                response = self.client.chat(self.model, messages)
-                if response.startswith("Erreur:"):
-                    self.error_occurred.emit(response)
-                else:
-                    self.response_ready.emit(response)
+                self.response_ready.emit(full_response)
                 
         except Exception as e:
             self.error_occurred.emit(f"Erreur inattendue: {str(e)}")
