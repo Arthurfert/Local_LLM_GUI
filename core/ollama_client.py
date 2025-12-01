@@ -8,6 +8,12 @@ from PySide6.QtCore import QThread, Signal
 class OllamaClient:
     """Client pour communiquer avec l'API Ollama"""
     
+    SYSTEM_PROMPT = """You are a helpful assistant. Follow these formatting rules:
+- Use Markdown formatting for your responses (headers, bold, italic, lists, code blocks).
+- For mathematical formulas, use LaTeX syntax with $ for inline math and $$ for display math.
+- Examples: inline $E = mc^2$, display $$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$
+- Always wrap mathematical expressions in $ or $$ delimiters."""
+    
     def __init__(self, base_url="http://localhost:11434"):
         self.base_url = base_url
         
@@ -47,9 +53,12 @@ class OllamaClient:
                         messages[i]['images'] = images
                         break
             
+            # Ajouter le message système au début
+            messages_with_system = [{"role": "system", "content": self.SYSTEM_PROMPT}] + messages
+            
             payload = {
                 "model": model,
-                "messages": messages,
+                "messages": messages_with_system,
                 "stream": True
             }
             
