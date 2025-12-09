@@ -596,18 +596,21 @@ class MainWindow(QMainWindow):
         text_safe = re.sub(r'```(?:\w+)?\n?(.*?)```', save_code_block, text_safe, flags=re.DOTALL)
         
         # Extraire et protéger les formules mathématiques
-        # Blocs $$...$$ (display mode)
+        
+        # Blocs $$...$$ (display mode) - peut contenir plusieurs lignes
         text_safe = re.sub(r'\$\$(.+?)\$\$', save_math_block, text_safe, flags=re.DOTALL)
-        # Inline $...$ (éviter les faux positifs avec les prix comme $10)
-        text_safe = re.sub(r'(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)', save_math_inline, text_safe)
         
         # Blocs \[...\] (display mode alternatif)
         text_safe = re.sub(r'\\\[(.+?)\\\]', save_math_block, text_safe, flags=re.DOTALL)
+        
+        # Inline $...$ - amélioration : accepte plus de caractères mais évite les faux positifs
+        text_safe = re.sub(r'(?<!\$)\$(?!\$)(.+?)\$(?!\$)', save_math_inline, text_safe, flags=re.DOTALL)
+        
         # Inline \(...\) (alternatif)
-        text_safe = re.sub(r'\\\((.+?)\\\)', save_math_inline, text_safe)
+        text_safe = re.sub(r'\\\((.+?)\\\)', save_math_inline, text_safe, flags=re.DOTALL)
         
         # Code inline avec `
-        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#121212; color:#f3f6f4; padding:2px 5px; border-radius:20px;">\1</code>', text_safe)
+        html = re.sub(r'`([^`]+)`', r'<code style="background-color:#242424; color:#f3f6f4; padding:2px 5px; border-radius:20px; font-family: \'Segoe UI\', sans-serif;">\1</code>', text_safe)
         
         # Gras **texte**
         html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html)
@@ -653,6 +656,13 @@ class MainWindow(QMainWindow):
             import matplotlib.pyplot as plt
             from io import BytesIO
             
+            # Nettoyer la formule
+            formula = formula.strip()
+            
+            # Vérifier que la formule n'est pas vide
+            if not formula:
+                return '<code style="color: #FFA500;">[formule vide]</code>'
+            
             # Créer une figure
             fig = plt.figure(figsize=(0.1, 0.1))
             fig.patch.set_facecolor('none')  # Fond transparent
@@ -660,26 +670,27 @@ class MainWindow(QMainWindow):
             # Taille de police réduite pour s'intégrer au texte
             fontsize = 11 if display_mode else 10
             
-            # Ajouter le texte LaTeX
-            text = fig.text(0, 0, f"${formula}$", fontsize=fontsize, color='white',
-                          ha='left', va='bottom')
+            # Ajouter le texte LaTeX - encadrer la formule avec $
+            latex_text = f"${formula}$"
+            text = fig.text(0, 0, latex_text, fontsize=fontsize, color='white',
+                          ha='left', va='bottom', usetex=False)
             
             # Ajuster la taille de la figure au contenu
             fig.canvas.draw()
             bbox = text.get_window_extent(fig.canvas.get_renderer())
             
             # Convertir en pouces avec marge
-            width = bbox.width / fig.dpi + 0.05
-            height = bbox.height / fig.dpi + 0.05
+            width = bbox.width / fig.dpi + 0.1
+            height = bbox.height / fig.dpi + 0.1
             fig.set_size_inches(width, height)
             
             # Repositionner le texte
-            text.set_position((0.05, 0.15))
+            text.set_position((0.05, 0.2))
             
             # Sauvegarder en PNG dans un buffer - DPI réduit
             buf = BytesIO()
             fig.savefig(buf, format='png', dpi=120, transparent=True, 
-                       bbox_inches='tight', pad_inches=0.01)
+                       bbox_inches='tight', pad_inches=0.02)
             plt.close(fig)
             
             # Encoder en base64
@@ -692,12 +703,13 @@ class MainWindow(QMainWindow):
             else:
                 style = "vertical-align: middle; max-height: 18px;"
             
-            return f'<img src="data:image/png;base64,{img_base64}" style="{style}" />'
+            return f'<img src="data:image/png;base64,{img_base64}" style="{style}" alt="{formula}" />'
             
         except Exception as e:
-            # En cas d'erreur, afficher la formule en texte
-            print(f"Erreur rendu LaTeX: {e}")
-            return f'<code style="color: #FFA500;">{formula}</code>'
+            # En cas d'erreur, afficher la formule en texte avec plus de détails
+            print(f"Erreur rendu LaTeX pour '{formula}': {type(e).__name__} - {str(e)}")
+            # Retourner la formule brute entre $ pour que l'utilisateur la voie
+            return f'<code style="color: #FFA500; background-color: #2D2D30; padding: 2px 5px; border-radius: 3px;">${formula}$</code>'
 
     def clear_conversation(self):
         """Efface la conversation"""
